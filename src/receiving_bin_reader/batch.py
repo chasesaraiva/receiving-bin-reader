@@ -21,20 +21,64 @@ def _page_count(pdf_path: str | Path) -> int:
     return count
 
 
+def parse_page_selection(value: str) -> list[int]:
+    """Parse 1-based PDF pages such as '1,3-5'; no duplicates or invalid ranges."""
+    pages = []
+    for item in value.split(","):
+        item = item.strip()
+        if not item:
+            raise ValueError("Empty item in page selection.")
+        if "-" in item:
+            a, sep, b = item.partition("-")
+            if not a.isdecimal() or not b.isdecimal():
+                raise ValueError(f"Invalid page range: {item!r}")
+            start, stop = int(a), int(b)
+            if start < 1 or stop < start:
+                raise ValueError(f"Invalid page range: {item!r}")
+            pages.extend(range(start, stop + 1))
+        elif item.isdecimal() and int(item) >= 1:
+            pages.append(int(item))
+        else:
+            raise ValueError(f"Invalid page number: {item!r}")
+    if not pages or len(set(pages)) != len(pages):
+        raise ValueError("Page selection must be nonempty and contain no duplicates.")
+    return sorted(pages)
+
+
+def _selected_pages(pdf_path: str | Path, pages: list[int] | None) -> tuple[int, list[int]]:
+    total = _page_count(pdf_path)
+    selected = list(range(1, total + 1)) if pages is None else sorted(pages)
+    if not selected or len(set(selected)) != len(selected):
+        raise ValueError("Page selection must be nonempty and contain no duplicates.")
+    if any(page < 1 or page > total for page in selected):
+        raise ValueError(f"Requested pages {selected} exceed PDF page range 1-{total}.")
+    return total, selected
+
+
 def _page_output_dir(out_dir: Path, page: int) -> Path:
     return out_dir / "pages" / f"page_{page:04d}"
 
 
 def crop_pdf_batch(
-    pdf_path: str | Path, out_dir: str | Path, *, dpi: int = 180
+    pdf_path: str | Path,
+    out_dir: str | Path,
+    *,
+    dpi: int = 180,
+    pages: list[int] | None = None,
 ) -> dict:
-    """Crop every page; keep page and physical-row identities distinct."""
+    """
+    Process all pages, or an explicit subset of receiving-worksheet pages.
+
+    Supporting carrier BOLs must NOT be mistaken for receiving worksheets.
+    Until the automatic page classifier is validated, use --pages for mixed PDFs.
+    """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    total, selected = _selected_pages(pdf_path, pages)
     page_summaries = []
     all_manifest = []
 
-    for page in range(1, _page_count(pdf_path) + 1):
+    for page in selected:
         page_dir = _page_output_dir(out_dir, page)
         try:
             summary = crop_pdf(pdf_path, page_dir, page_number=page, dpi=dpi)
@@ -66,7 +110,10 @@ def crop_pdf_batch(
             writer.writerows(all_manifest)
 
     result = {
-        "pages": len(page_summaries),
+        "pages": len(selected),
+        "source_page_count": total,
+        "selected_pages": selected,
+        "skipped_pages": [p for p in range(1, total + 1) if p not in selected],
         "row_count": sum(x["row_count"] for x in page_summaries),
         "page_summaries": page_summaries,
     }
@@ -82,27 +129,24 @@ def read_pdf_batch_consensus(
     out_dir: str | Path,
     *,
     dpi: int = 180,
+    pages: list[int] | None = None,
 ) -> dict:
-    """
-    Batch reading uses exactly one OCR reader across every page.
-    No automatic inventory writes and no unapproved BIN corrections.
-    """
+    """Load the OCR models once; keep page/row ownership and approval conservative."""
     out_dir = Path(out_dir)
     start = perf_counter()
-    crop_result = crop_pdf_batch(pdf_path, out_dir, dpi=dpi)
+    crop_result = crop_pdf_batch(pdf_path, out_dir, dpi=dpi, pages=pages)
     approved = load_approved_bins(approved_bins_path)
     reader = PaddleConsensusReader()
 
     review_rows = []
     page_stats = []
-    for page in range(1, crop_result["pages"] + 1):
+    for page in crop_result["selected_pages"]:
         page_dir = _page_output_dir(out_dir, page)
         try:
             reads, rows = _read_manifest(page_dir, approved, reader)
         except Exception as exc:
             raise RuntimeError(f"Could not recognize BINs on page {page}: {exc}") from exc
 
-        # The per-page output remains self-contained for inspection.
         with (page_dir / "review.csv").open(
             "w", encoding="utf-8", newline=""
         ) as handle:
@@ -112,7 +156,6 @@ def read_pdf_batch_consensus(
 
         for row in rows:
             row = list(row)
-            # Crop paths in the root review file are relative to batch root.
             row[-2] = str((page_dir / row[-2]).relative_to(out_dir))
             row[-1] = str((page_dir / row[-1]).relative_to(out_dir))
             review_rows.append([page, *row])
@@ -133,6 +176,9 @@ def read_pdf_batch_consensus(
 
     result = {
         "pages": crop_result["pages"],
+        "source_page_count": crop_result["source_page_count"],
+        "selected_pages": crop_result["selected_pages"],
+        "skipped_pages": crop_result["skipped_pages"],
         "row_count": len(review_rows),
         "valid": sum(x["valid"] for x in page_stats),
         "review": sum(x["review"] for x in page_stats),
