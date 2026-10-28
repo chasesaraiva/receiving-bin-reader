@@ -91,7 +91,7 @@ def test_carrier_style_two_rule_layout_fails_closed():
             cv2.LINE_AA,
         )
     image = Image.fromarray(cv2.cvtColor(array, cv2.COLOR_BGR2RGB))
-    with pytest.raises(ValueError, match="NWC receiving worksheet"):
+    with pytest.raises(ValueError, match="supported landscape NWC worksheet"):
         detect_page_geometry(image)
 
 
