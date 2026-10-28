@@ -117,3 +117,56 @@ def save_contact_sheet(
 
     sheet.save(output_path)
     return output_path
+
+
+
+def save_review_contexts(
+    image: Image.Image,
+    geometry: PageGeometry,
+    out_dir: str | Path,
+) -> list[Path]:
+    """Save a larger visual audit image for each row (never passed to OCR).
+
+    Shows the target product plus the adjacent printed product rows and their
+    complete BIN cells. This prevents a reviewer from relying on a clipped,
+    row-height BIN crop when handwriting overlaps boundaries.
+    """
+    out_dir = Path(out_dir)
+    review_dir = out_dir / "review_context"
+    review_dir.mkdir(parents=True, exist_ok=True)
+    results: list[Path] = []
+
+    for index, row in enumerate(geometry.rows):
+        start_index = max(0, index - 1)
+        end_index = min(len(geometry.rows) - 1, index + 1)
+        top = max(geometry.header_bottom + 1, geometry.rows[start_index].core.y1 - 7)
+        bottom = min(
+            geometry.page_height,
+            geometry.rows[end_index].core.y2 + 7,
+        )
+        # PO, Description, SKU and BIN remain together for attribution.
+        crop = image.crop(
+            (0, top, min(geometry.page_width, geometry.bin_right + 8), bottom)
+        ).convert("RGB")
+        # Label target row outside the original pixels; do not draw over ink.
+        label_height = 28
+        canvas = Image.new(
+            "RGB", (crop.width, crop.height + label_height), "white"
+        )
+        label = ImageDraw.Draw(canvas)
+        label.text(
+            (8, 8),
+            f"TARGET ROW {row.row_number:03d} | neighbor rows for manual review",
+            fill=(170, 30, 30),
+        )
+        canvas.paste(crop, (0, label_height))
+        # A short left-side marker shows the target row without covering BINs.
+        marker_top = row.core.y1 - top + label_height
+        marker_bottom = row.core.y2 - top + label_height
+        label.line(
+            (4, marker_top, 4, marker_bottom), fill=(210, 30, 30), width=4
+        )
+        path = review_dir / f"context_{row.row_number:03d}.png"
+        canvas.save(path)
+        results.append(path)
+    return results

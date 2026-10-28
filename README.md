@@ -1,145 +1,125 @@
 # Receiving BIN Reader
 
-A small, open-source pipeline for receiving worksheets that contain:
+A conservative open-source pipeline for receiving worksheets containing printed product rows and a handwritten warehouse BIN column.
 
-- printed product rows
-- a handwritten warehouse BIN column
-- a stable table layout
+**Row ownership is determined by printed page geometry, never by OCR.** Every physical row is cropped separately. Recognition uses two independent PaddleOCR model families and only accepts an exact, approved BIN when those models agree on one unambiguous candidate. Everything else is marked `REVIEW`.
 
-The design deliberately separates **row ownership** from **handwriting recognition**:
+## Installation
 
-1. Render the PDF page once.
-2. Detect the printed receiving-table geometry deterministically.
-3. Split the page into one physical product row per crop.
-4. Make a slightly padded crop of only the BIN column.
-5. Run OCR on each BIN crop.
-6. Accept only exact values from an approved BIN list.
-7. Write a review CSV and visual contact sheet.
-
-The OCR engine is never allowed to decide which product owns a BIN. Geometry decides ownership first.
-
-## Why this project starts small
-
-This repository intentionally does **not** contain:
-
-- Google Sheets writes
-- inventory merging
-- SKU alias logic
-- vintage-change logic
-- automatic approvals
-- AI model fallbacks
-- fuzzy BIN correction
-
-Those are separate concerns and can be added after crop + BIN accuracy is proven.
-
-## Requirements
-
-Core cropper:
-
-- Python 3.11
-- PyMuPDF
-- OpenCV
-- Pillow
-- NumPy
-
-BIN OCR:
-
-- PaddleOCR 3.7
-- PaddlePaddle CPU 3.2
-
-PaddleOCR 3.x supports CPU inference and exposes recognition text, confidence, and bounding boxes. The reader loads the OCR engine once and reuses it for the whole PDF batch.
-
-## Install locally
+Requires Python 3.11, PyMuPDF, OpenCV, Pillow, and NumPy.
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-
-python -m pip install --upgrade pip
-python -m pip install -e .
-
-# Optional OCR engine:
-python -m pip install paddlepaddle==3.2.0 \
-  -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
-python -m pip install "paddleocr==3.7.0"
+python -m pip install -e ".[test]"
+# Optional OCR inference:
+python -m pip install paddlepaddle==3.2.0
+python -m pip install paddleocr==3.7.0
 ```
 
-## Crop-only validation
-
-This is the first thing to run on a new worksheet style:
+## Crop a single page (no OCR)
 
 ```bash
-receiving-bin-reader crop \
-  "sample.pdf" \
-  --out output/
+receiving-bin-reader crop "sample.pdf" --page 1 --out output/
 ```
 
-Outputs:
+Produces `manifest.csv`, `row_overlay.png`, `contact_sheet.png`, and individual `rows/` and `bins/` crops.
 
-```text
-output/
-  manifest.csv
-  row_overlay.png
-  contact_sheet.png
-  rows/
-    row_001.png
-    row_002.png
-    ...
-  bins/
-    bin_001.png
-    bin_002.png
-    ...
-```
-
-No OCR is involved in this command.
-
-## BIN OCR
-
-Create a newline-delimited approved BIN file:
-
-```text
-1A1
-1A2
-1A3
-...
-BC
-R1A
-R1B
-```
-
-Then run:
+## Crop an entire multipage PDF (no OCR)
 
 ```bash
-receiving-bin-reader read \
-  "sample.pdf" \
-  --approved-bins approved_bins.txt \
-  --out output/
+receiving-bin-reader crop "receiving-packet.pdf" --all-pages --out output/
 ```
 
-The result `review.csv` contains:
+The batch output has a combined `manifest.csv` with **page + physical row** columns, `batch_summary.json`, and page-specific images and manifests under `pages/page_0001/`, `pages/page_0002/`, etc. A failure on any page stops the batch with that page number (no silent omissions).
 
-- physical row number
-- accepted BIN(s)
-- raw OCR text
-- OCR score
-- status
-- crop filenames
+## Mixed packets containing carrier BOLs
 
-Unapproved OCR values are never changed to the nearest approved BIN.
+Some multi-page deliveries combine authoritative NWC receiving worksheets with carrier BOLs, invoices, and manifests. **Only select pages containing receiving worksheets.** The reader does not yet automatically classify all page types or extract carrier location codes. A conservative landscape + three-column-line geometry check rejects some carrier layouts instead of falsely treating them as receiving worksheets, but **it is not a complete carrier detector**. Different NWC scans may have three, four, or more detectable vertical rules.
 
-## Confidence policy
+For example, if receiving worksheets are on pages 1, 3, and 4:
 
-The first release is intentionally conservative:
+```bash
+receiving-bin-reader crop "mixed-packet.pdf" --pages 1,3-4 --out output/
+```
 
-- `VALID`: at least one approved BIN was read and no unapproved BIN-like candidate remains.
-- `REVIEW`: no approved BIN, mixed approved/unapproved candidates, or low OCR confidence.
+The combined manifest and review identify the actual PDF page numbers and audit skipped pages in `batch_summary.json`. Invalid page ranges and geometry failures are errors, not silent fallbacks. On a verified sample containing three receiving rows followed by a carrier BOL, the original geometric detector incorrectly treated 17 carrier text bands as product rows; the layout safeguard rejects that carrier page.
 
-`VALID` is **not** an instruction to write Inventory automatically. Human review remains a separate step.
+## Read handwritten BINs
 
-## GitHub
+Create `approved_bins.txt` with one approved BIN on each line (e.g. `1A1`, `1B7`, `BC`).
 
-The included CI workflow runs the deterministic geometry and validator tests on every push.
+Single page:
+```bash
+receiving-bin-reader read "sample.pdf" --page 1 \
+  --approved-bins approved_bins.txt --out output/
+```
 
-The Drive/GitHub automation layer is intentionally deferred until the core reader is benchmarked on real receiving PDFs. This prevents cloud plumbing from becoming entangled with OCR accuracy.
+Entire packet of receiving worksheets (no carrier-only pages):
+```bash
+receiving-bin-reader read "receiving-packet.pdf" --all-pages \
+  --approved-bins approved_bins.txt --out output/
+```
+
+Mixed packet with receiving worksheets on known pages:
+
+```bash
+receiving-bin-reader read "mixed-packet.pdf" --pages 1,3-4 \
+  --approved-bins approved_bins.txt --out output/
+```
+
+Multipage processing **loads the two OCR models once** and reuses them across the packet. The combined `review.csv` has page and row identifiers, exact accepted BINs (if any), OCR passes, rejected candidates, status, review reason, and crop paths. Individual page review CSVs remain available inside each page folder.
+
+### Experimental handwriting improvement
+
+A private 17-fixture benchmark compared eight image treatments. Adding two +/-3 degree rotated variants (using the original two independent OCR models) increased correctly accepted BIN entries from 10 to 11 with zero wrong acceptances in that small test. Other tested treatments did not increase coverage.
+
+The original two-variant consensus remains the default. To evaluate the extra rotation safely:
+
+```bash
+receiving-bin-reader read "packet.pdf" --pages 1,3-4 \
+  --approved-bins approved_bins.txt --extended-variants --out output/
+```
+
+This costs additional CPU inference and **is experimental**, not validated for unattended inventory updates.
+
+### Handwriting crossing printed rows
+
+The reader now checks dark ink on both sides of every adjacent physical-row
+boundary, excluding long printed horizontal grid rules. If ink appears to cross
+a boundary, **both rows are forced to `REVIEW`**, even when the OCR models
+agree. The `decision_reason` column names the adjacent row; OCR passes remain
+visible as suggestions but are not accepted. Every row also has a
+`review_context` image showing its product plus neighboring printed rows,
+complete BIN cells, and a target-row marker. Context images are **never**
+passed to OCR; they are strictly for human review. This is intentionally conservative:
+it prevents silent cross-row BIN assignments but may increase manual review.
+
+**A `VALID` decision is not permission to update Inventory.** Review and human sign-off remain separate. Unapproved readings are never auto-corrected; ambiguity is never automatically resolved through fuzzy matching.
+
+## Status and limitations
+
+Stage 1 covers deterministic crop geometry, conservative OCR, review files, and synthetic multipage tests. The private handwriting benchmark has 17 fixtures; its initial conservative consensus accepted 10 correctly and sent seven for review, with zero incorrect acceptances in that small sample. These figures **are not a guarantee** on new PDFs or other handwriting.
+
+The cropper assumes the receiving-table layout matches tested geometry. Validate real full PDFs, row counts, and end-to-end CPU runtime before connecting Google Drive/Sheets. A Google Sheets interface, SKU matching, inventory consolidation, vintage changes, and approvals are not implemented here.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+
+### Experimental blue-ink isolation
+
+For worksheets written in blue ballpoint, the reader can generate two extra
+black-on-white recognition views containing only blue-dominant pixels.
+Black printed text and table lines are removed from **these additional views**
+but the original grayscale crops are always retained.
+
+```bash
+receiving-bin-reader read packet.pdf --pages 1 --blue-ink-variants \
+  --approved-bins approved_bins.txt --out output/
+```
+
+The mode is **off by default** and must be evaluated against manually verified
+receiving worksheets before use. A blue-only OCR candidate cannot become
+`VALID` without support from an original-image OCR pass. Physical ink
+crossing between rows overrides even unanimous recognition and forces
+`REVIEW`. Black-written/printed BINs still use the ordinary OCR path.

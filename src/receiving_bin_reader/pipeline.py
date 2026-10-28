@@ -8,7 +8,7 @@ from statistics import mean
 from PIL import Image
 
 from .consensus import decide_consensus
-from .crops import save_contact_sheet, save_crops, save_overlay
+from .crops import save_contact_sheet, save_crops, save_overlay, save_review_contexts
 from .geometry import detect_page_geometry
 from .models import RowRead
 from .ocr import PaddleConsensusReader
@@ -29,6 +29,7 @@ def crop_pdf(
     geometry = detect_page_geometry(image)
 
     row_paths, bin_paths = save_crops(image, geometry, out_dir)
+    context_paths = save_review_contexts(image, geometry, out_dir)
     save_overlay(image, geometry, out_dir / "row_overlay.png")
     save_contact_sheet(image, geometry, out_dir / "contact_sheet.png")
 
@@ -43,12 +44,15 @@ def crop_pdf(
                 "bin_x2",
                 "bin_padded_top",
                 "bin_padded_bottom",
+                "review_context",
                 "row_crop",
                 "bin_crop",
             ]
         )
 
-        for row, row_path, bin_path in zip(geometry.rows, row_paths, bin_paths):
+        for row, row_path, bin_path, context_path in zip(
+            geometry.rows, row_paths, bin_paths, context_paths
+        ):
             writer.writerow(
                 [
                     row.row_number,
@@ -58,6 +62,7 @@ def crop_pdf(
                     row.bin_padded.x2,
                     row.bin_padded.y1,
                     row.bin_padded.y2,
+                    context_path.relative_to(out_dir),
                     row_path.relative_to(out_dir),
                     bin_path.relative_to(out_dir),
                 ]

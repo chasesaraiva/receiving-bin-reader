@@ -1,86 +1,48 @@
 # Architecture
 
-## Core principle
-
-The pipeline has one responsibility at each stage.
-
 ```text
-PDF
-  ↓
-render.py
-  ↓
-geometry.py
-  ├─ physical row boundaries
-  └─ BIN column boundaries
-  ↓
-crops.py
-  ├─ full row crops
-  └─ padded BIN crops
-  ↓
-ocr.py
-  └─ raw OCR boxes/text/scores
-  ↓
-validation.py
-  └─ exact Approved BIN validation
-  ↓
-pipeline.py
-  ├─ manifest.csv
-  ├─ review.csv
-  ├─ contact sheet
-  └─ row/BIN images
+PDF -> render each page -> deterministic row geometry
+    -> physical row and BIN crop (page + row identity preserved)
+    -> two PaddleOCR recognition model families / two image variants
+    -> exact approved BIN consensus -> VALID or REVIEW
+    -> per-page + batch review CSV and visual contact sheets
 ```
 
-## Stage 1 — current repository
+## Stage 1: in this repository
 
-Goal: prove that row ownership and BIN recognition are accurate.
+- Crop individual pages or entire receiving-only PDFs with `--all-pages`; explicitly select receiving-worksheet pages within mixed BOL packets using `--pages 1,3-5`.
+- Report source page count, selected PDF pages and skipped pages, rather than guessing whether carrier-only pages contain BINs.
+- Keep row ownership independent from OCR and never transfer BIN values between rows.
+- Inspect ink immediately above and below adjacent row boundaries; if strokes seem to cross, mark BOTH products REVIEW regardless of OCR agreement. This avoids accidental adjacent-row assignments without guessing new row ownership.
+- Write page-specific crop artifacts, combined manifests, review CSV, and elapsed runtime.
+- Reuse one OCR reader per batch to avoid repeated model initialization.
+- Fail the batch if any page cannot be geometrically processed.
+- Require landscape NWC worksheet geometry with at least three plausible right-side table separators (real scans may omit fourth separator). Fail closed on portrait carrier pages. This is not a general classifier: use explicit `--pages` for mixed packets.
+- Require exact approved-list membership and independent model agreement.
+- Optional `--extended-variants` tests +/-3° rotation variants; the original consensus stays default until validated on larger fixture sets.
+- **No** inventory writes, fuzzy BIN correction, SKU alias matching, or auto approval.
 
-No Google Sheets writes.
+Synthetic two-page tests exercise page/row isolation, review aggregation, one-time reader initialization, and fail-closed page handling. Real scanned documents and handwritten fixtures still require validation.
 
-Acceptance criteria:
-
-1. Physical row count is correct.
-2. Every crop contains exactly one printed product row.
-3. Padded BIN crops do not change row ownership.
-4. Approved BIN validation never fuzzy-corrects a value.
-5. Known problem PDFs reproduce their physical row counts consistently.
-6. End-to-end runtime stays practical on CPU.
-
-## Stage 2 — GitHub Actions + Google Drive
-
-After Stage 1 is proven:
+## Stage 2: proposed Drive/GitHub Actions integration
 
 ```text
 Google Drive PDF file ID
-       ↓
-GitHub repository_dispatch
-       ↓
-GitHub Actions runner
-       ↓
-download PDF with service account
-       ↓
-run receiving-bin-reader
-       ↓
-upload review artifact / result file
+  -> GitHub repository_dispatch
+  -> runner downloads PDF using a service account
+  -> run full PDF reader
+  -> upload review artifacts
 ```
 
-The repository remains open source. Company credentials and Drive IDs live only in GitHub Secrets/Variables.
+Keep company credentials and Drive IDs in private secrets, not public source.
 
-## Stage 3 — Google Sheet review
+## Stage 3: proposed Google Sheet review
 
-After Stage 2 is proven:
+```text
+Apps Script submits a file ID
+  -> batch review CSV imported into Inbound Review
+  -> user verifies flagged BINs and approves
+  -> separate Inventory processing module handles SKU/vintage changes
+```
 
-- lightweight Apps Script submits Drive file IDs
-- result JSON/CSV is loaded into `Inbound Review`
-- human approval remains the final gate
-- Inventory processing is a separate module
-
-## Non-goals
-
-The cropper must not:
-
-- infer a nearby BIN
-- merge product rows
-- move a BIN to an adjacent row
-- deduplicate SKUs
-- decide product identity
-- write Inventory
+No stage 2 or 3 automation should be enabled until row counts, OCR correctness, and throughput are validated on actual receiving packets.
