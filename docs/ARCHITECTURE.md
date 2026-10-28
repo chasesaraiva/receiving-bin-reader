@@ -1,86 +1,44 @@
 # Architecture
 
-## Core principle
+\`\`\`text
+PDF -> render each page -> deterministic row geometry
+    -> physical row and BIN crop (page + row identity preserved)
+    -> two PaddleOCR recognition model families / two image variants
+    -> exact approved BIN consensus -> VALID or REVIEW
+    -> per-page + batch review CSV and visual contact sheets
+\`\`\`
 
-The pipeline has one responsibility at each stage.
+## Stage 1: in this repository
 
-```text
-PDF
-  ↓
-render.py
-  ↓
-geometry.py
-  ├─ physical row boundaries
-  └─ BIN column boundaries
-  ↓
-crops.py
-  ├─ full row crops
-  └─ padded BIN crops
-  ↓
-ocr.py
-  └─ raw OCR boxes/text/scores
-  ↓
-validation.py
-  └─ exact Approved BIN validation
-  ↓
-pipeline.py
-  ├─ manifest.csv
-  ├─ review.csv
-  ├─ contact sheet
-  └─ row/BIN images
-```
+- Crop individual pages or entire PDFs using \`--all-pages\`.
+- Keep row ownership independent from OCR and never transfer BIN values between rows.
+- Write page-specific crop artifacts, combined manifests, review CSV, and elapsed runtime.
+- Reuse one OCR reader per batch to avoid repeated model initialization.
+- Fail the batch if any page cannot be geometrically processed.
+- Require exact approved-list membership and independent model agreement.
+- **No** inventory writes, fuzzy BIN correction, SKU alias matching, or auto approval.
 
-## Stage 1 — current repository
+Synthetic two-page tests exercise page/row isolation, review aggregation, one-time reader initialization, and fail-closed page handling. Real scanned documents and handwritten fixtures still require validation.
 
-Goal: prove that row ownership and BIN recognition are accurate.
+## Stage 2: proposed Drive/GitHub Actions integration
 
-No Google Sheets writes.
-
-Acceptance criteria:
-
-1. Physical row count is correct.
-2. Every crop contains exactly one printed product row.
-3. Padded BIN crops do not change row ownership.
-4. Approved BIN validation never fuzzy-corrects a value.
-5. Known problem PDFs reproduce their physical row counts consistently.
-6. End-to-end runtime stays practical on CPU.
-
-## Stage 2 — GitHub Actions + Google Drive
-
-After Stage 1 is proven:
-
-```text
+\`\`\`text
 Google Drive PDF file ID
-       ↓
-GitHub repository_dispatch
-       ↓
-GitHub Actions runner
-       ↓
-download PDF with service account
-       ↓
-run receiving-bin-reader
-       ↓
-upload review artifact / result file
-```
+  -> GitHub repository_dispatch
+  -> runner downloads PDF using a service account
+  -> run full PDF reader
+  -> upload review artifacts
+\`\`\`
 
-The repository remains open source. Company credentials and Drive IDs live only in GitHub Secrets/Variables.
+Keep company credentials and Drive IDs in private secrets, not public source.
 
-## Stage 3 — Google Sheet review
+## Stage 3: proposed Google Sheet review
 
-After Stage 2 is proven:
+\`\`\`text
+Apps Script submits a file ID
+  -> batch review CSV imported into Inbound Review
+  -> user verifies flagged BINs and approves
+  -> separate Inventory processing module handles SKU/vintage changes
+\`\`\`
 
-- lightweight Apps Script submits Drive file IDs
-- result JSON/CSV is loaded into `Inbound Review`
-- human approval remains the final gate
-- Inventory processing is a separate module
-
-## Non-goals
-
-The cropper must not:
-
-- infer a nearby BIN
-- merge product rows
-- move a BIN to an adjacent row
-- deduplicate SKUs
-- decide product identity
-- write Inventory
+No stage 2 or 3 automation should be enabled until row counts, OCR correctness, and throughput are validated on actual receiving packets.
