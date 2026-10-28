@@ -8,6 +8,10 @@ from PIL import Image
 from .models import Box, OcrToken
 
 
+DEFAULT_DETECTION_MODEL = "PP-OCRv5_mobile_det"
+DEFAULT_RECOGNITION_MODEL = "en_PP-OCRv5_mobile_rec"
+
+
 def _walk_for_ocr_dict(value: Any) -> dict[str, Any] | None:
     if isinstance(value, dict):
         if "rec_texts" in value and ("rec_boxes" in value or "rec_polys" in value):
@@ -47,7 +51,14 @@ def _box_from_any(raw: Any) -> Box:
 
 
 class PaddleBinReader:
-    def __init__(self, score_threshold: float = 0.0) -> None:
+    """Handwriting-capable PaddleOCR adapter for isolated BIN crops."""
+
+    def __init__(
+        self,
+        score_threshold: float = 0.0,
+        detection_model: str = DEFAULT_DETECTION_MODEL,
+        recognition_model: str = DEFAULT_RECOGNITION_MODEL,
+    ) -> None:
         try:
             from paddleocr import PaddleOCR
         except ImportError as exc:
@@ -56,11 +67,15 @@ class PaddleBinReader:
             ) from exc
 
         self.score_threshold = score_threshold
+        self.detection_model = detection_model
+        self.recognition_model = recognition_model
+
         self._ocr = PaddleOCR(
+            text_detection_model_name=detection_model,
+            text_recognition_model_name=recognition_model,
             use_doc_orientation_classify=False,
             use_doc_unwarping=False,
             use_textline_orientation=False,
-            lang="en",
         )
 
     def read(self, image: Image.Image) -> list[OcrToken]:
