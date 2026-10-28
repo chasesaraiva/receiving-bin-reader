@@ -1,0 +1,33 @@
+name: OCR smoke test
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "src/receiving_bin_reader/ocr.py"
+      - "src/receiving_bin_reader/benchmark.py"
+      - "scripts/ocr_smoke.py"
+      - ".github/workflows/ocr-smoke.yml"
+
+jobs:
+  paddle-ocr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m pip install paddlepaddle==3.2.0
+          python -m pip install paddleocr==3.7.0
+
+      - name: PaddleOCR smoke test
+        run: python scripts/ocr_smoke.py
