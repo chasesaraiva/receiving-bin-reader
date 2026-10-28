@@ -57,6 +57,7 @@ def test_batch_crop_keeps_page_and_row_identity(tmp_path):
     )
     assert all((out / x["bin_crop"]).is_file() for x in manifest)
     assert (out / "pages/page_0002/contact_sheet.png").is_file()
+    assert all((out / x["review_context"]).is_file() for x in manifest)
 
 
 def test_batch_reuses_reader_and_writes_page_qualified_review(tmp_path, monkeypatch):
@@ -92,6 +93,7 @@ def test_batch_reuses_reader_and_writes_page_qualified_review(tmp_path, monkeypa
     assert records[-1]["page"] == "2"
     assert records[-1]["row"] == "5"
     assert all((out / x["bin_crop"]).is_file() for x in records)
+    assert all((out / x["review_context"]).is_file() for x in records)
     assert (out / "pages/page_0001/review.csv").is_file()
 
 

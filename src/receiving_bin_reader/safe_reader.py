@@ -24,6 +24,7 @@ def _review_header() -> list[str]:
         "status",
         "decision_reason",
         "supporting_models",
+        "review_context",
         "row_crop",
         "bin_crop",
     ]
@@ -105,6 +106,7 @@ def _read_manifest(
             status,
             reason,
             ", ".join(decision.supporting_models),
+            manifest.get("review_context", ""),
             str(row_path.relative_to(out_dir)),
             str(bin_path.relative_to(out_dir)),
         ])

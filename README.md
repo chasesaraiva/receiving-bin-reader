@@ -89,7 +89,10 @@ The reader now checks dark ink on both sides of every adjacent physical-row
 boundary, excluding long printed horizontal grid rules. If ink appears to cross
 a boundary, **both rows are forced to `REVIEW`**, even when the OCR models
 agree. The `decision_reason` column names the adjacent row; OCR passes remain
-visible as suggestions but are not accepted. This is intentionally conservative:
+visible as suggestions but are not accepted. Every row also has a
+`review_context` image showing its product plus neighboring printed rows,
+complete BIN cells, and a target-row marker. Context images are **never**
+passed to OCR; they are strictly for human review. This is intentionally conservative:
 it prevents silent cross-row BIN assignments but may increase manual review.
 
 **A `VALID` decision is not permission to update Inventory.** Review and human sign-off remain separate. Unapproved readings are never auto-corrected; ambiguity is never automatically resolved through fuzzy matching.

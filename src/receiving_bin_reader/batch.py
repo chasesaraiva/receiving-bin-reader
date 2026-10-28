@@ -93,7 +93,7 @@ def crop_pdf_batch(
                     **{
                         key: (
                             str((page_dir / row[key]).relative_to(out_dir))
-                            if key in {"row_crop", "bin_crop"}
+                            if key in {"row_crop", "bin_crop", "review_context"}
                             else row[key]
                         )
                         for key in row if key != "row"
@@ -160,6 +160,8 @@ def read_pdf_batch_consensus(
 
         for row in rows:
             row = list(row)
+            if row[-3]:
+                row[-3] = str((page_dir / row[-3]).relative_to(out_dir))
             row[-2] = str((page_dir / row[-2]).relative_to(out_dir))
             row[-1] = str((page_dir / row[-1]).relative_to(out_dir))
             review_rows.append([page, *row])
