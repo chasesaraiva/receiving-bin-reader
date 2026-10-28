@@ -93,3 +93,41 @@ def test_carrier_style_two_rule_layout_fails_closed():
     image = Image.fromarray(cv2.cvtColor(array, cv2.COLOR_BGR2RGB))
     with pytest.raises(ValueError, match="NWC receiving worksheet"):
         detect_page_geometry(image)
+
+
+
+def test_three_detectable_right_separators_still_count_as_worksheet():
+    """Real NWC scans can lack a fourth continuous Notes separator."""
+    import cv2
+    import numpy as np
+    from PIL import Image
+    width, height = 1400, 1000
+    data = np.full((height, width, 3), 255, np.uint8)
+    cv2.line(data, (80, 170), (1300, 170), (0, 0, 0), 3)
+    for x in (900, 1020, 1140):
+        cv2.line(data, (x, 90), (x, 750), (0, 0, 0), 2)
+    for i in range(5):
+        cv2.putText(
+            data, f"Product {i+1} SKU{i+1:03d}", (350, 220 + 55*i),
+            cv2.FONT_HERSHEY_SIMPLEX, .65, (0, 0, 0), 2, cv2.LINE_AA,
+        )
+    image = Image.fromarray(cv2.cvtColor(data, cv2.COLOR_BGR2RGB))
+    geo = detect_page_geometry(image)
+    assert len(geo.rows) == 5
+    assert geo.sku_right in range(895, 905)
+
+
+def test_portrait_carrier_with_four_vertical_rules_must_fail():
+    """Enough lines alone are not proof of an NWC worksheet."""
+    import pytest
+    from PIL import Image
+    import cv2
+    import numpy as np
+    width, height = 1000, 1400
+    data = np.full((height, width, 3), 255, np.uint8)
+    cv2.line(data, (80, 170), (950, 170), (0, 0, 0), 3)
+    for x in (580, 660, 740, 850):
+        cv2.line(data, (x, 90), (x, 1000), (0, 0, 0), 2)
+    image = Image.fromarray(cv2.cvtColor(data, cv2.COLOR_BGR2RGB))
+    with pytest.raises(ValueError, match="supported landscape"):
+        detect_page_geometry(image)

@@ -53,16 +53,30 @@ def _detect_right_table_lines(gray: np.ndarray) -> list[tuple[int, int, int]]:
         if item[0] > width * 0.50 and item[1] < width * 0.95
     ]
 
-    # NWC receiving worksheets have four distinct right-side column
-    # separators (SKU/BIN/Bottles/Notes). Carrier BOLs can contain two
-    # long vertical rules and previously produced plausible but false rows.
-    # Fail closed instead of turning carrier locations into BINs.
-    # This is a template safeguard, not a general page-type classifier.
-    if len(right) < 4:
+    # Real NWC worksheet scans vary: some present only THREE reliably
+    # detectable right-side separators (SKU/BIN/Bottles), while others
+    # present four or more. Requiring four silently rejected valid worksheets.
+    # The sample carrier BOLs are portrait and have fewer column separators.
+    # Keep conservative guards, but do not mistake one scan template for all.
+    if width <= height * 1.16 or len(right) < 3:
         raise ValueError(
-            "Page does not match the NWC receiving worksheet layout: "
-            f"expected at least 4 right-side table separators, found {len(right)}. "
-            "For mixed PDF packets, use --pages to choose worksheet pages."
+            "Page does not match a supported landscape NWC worksheet layout: "
+            f"image {width}x{height}, {len(right)} right-side table separators. "
+            "Use --pages for mixed receiving/carrier PDF packets."
+        )
+
+    # Typical first lines are the SKU/BIN and BIN/Bottles boundaries, about
+    # 4-13% of image width apart. If the geometry differs, require review
+    # rather than extract potentially incorrect carrier location codes.
+    first, second, third = (item[0] for item in right[:3])
+    if not (
+        width * 0.55 <= first <= width * 0.80
+        and width * 0.04 <= second - first <= width * 0.13
+        and width * 0.04 <= third - second <= width * 0.15
+    ):
+        raise ValueError(
+            "Page's right-side column geometry is not a recognized NWC "
+            "receiving layout; select the worksheet pages explicitly."
         )
 
     return right
