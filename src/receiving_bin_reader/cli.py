@@ -3,7 +3,8 @@ from __future__ import annotations
 import argparse
 import json
 
-from .pipeline import crop_pdf, read_pdf
+from .pipeline import crop_pdf
+from .safe_reader import read_pdf_consensus
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -20,13 +21,15 @@ def _parser() -> argparse.ArgumentParser:
     crop.add_argument("--page", type=int, default=1)
     crop.add_argument("--dpi", type=int, default=180)
 
-    read = subparsers.add_parser("read", help="Crop rows and OCR BINs.")
+    read = subparsers.add_parser(
+        "read",
+        help="Crop rows, read BINs, and require exact cross-model consensus.",
+    )
     read.add_argument("pdf")
     read.add_argument("--approved-bins", required=True)
     read.add_argument("--out", required=True)
     read.add_argument("--page", type=int, default=1)
     read.add_argument("--dpi", type=int, default=180)
-    read.add_argument("--review-threshold", type=float, default=0.70)
 
     return parser
 
@@ -44,13 +47,12 @@ def main() -> None:
         print(json.dumps(result, indent=2))
         return
 
-    reads = read_pdf(
+    reads = read_pdf_consensus(
         args.pdf,
         args.approved_bins,
         args.out,
         page_number=args.page,
         dpi=args.dpi,
-        score_review_threshold=args.review_threshold,
     )
 
     print(
