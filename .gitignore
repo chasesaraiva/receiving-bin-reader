@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+output/
+dist/
+build/
+*.egg-info/
+*.pdf
+service-account.json
+approved_bins.txt
