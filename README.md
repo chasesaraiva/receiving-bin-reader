@@ -35,7 +35,7 @@ The batch output has a combined `manifest.csv` with **page + physical row** colu
 
 ## Mixed packets containing carrier BOLs
 
-Some multi-page deliveries combine authoritative NWC receiving worksheets with carrier BOLs, invoices, and manifests. **Only select pages containing receiving worksheets.** The reader does not yet automatically classify page types or extract carrier location codes.
+Some multi-page deliveries combine authoritative NWC receiving worksheets with carrier BOLs, invoices, and manifests. **Only select pages containing receiving worksheets.** The reader does not yet automatically classify all page types or extract carrier location codes. A conservative four-column-line template check rejects some carrier layouts instead of falsely treating them as receiving worksheets, but **it is not a complete carrier detector**.
 
 For example, if receiving worksheets are on pages 1, 3, and 4:
 
@@ -43,7 +43,7 @@ For example, if receiving worksheets are on pages 1, 3, and 4:
 receiving-bin-reader crop "mixed-packet.pdf" --pages 1,3-4 --out output/
 ```
 
-The combined manifest and review identify the actual PDF page numbers and audit skipped pages in `batch_summary.json`. Invalid page ranges and geometry failures are errors, not silent fallbacks.
+The combined manifest and review identify the actual PDF page numbers and audit skipped pages in `batch_summary.json`. Invalid page ranges and geometry failures are errors, not silent fallbacks. On a verified sample containing three receiving rows followed by a carrier BOL, the original geometric detector incorrectly treated 17 carrier text bands as product rows; the four-line safeguard now rejects that carrier page.
 
 ## Read handwritten BINs
 

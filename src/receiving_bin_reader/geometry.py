@@ -53,9 +53,16 @@ def _detect_right_table_lines(gray: np.ndarray) -> list[tuple[int, int, int]]:
         if item[0] > width * 0.50 and item[1] < width * 0.95
     ]
 
-    if len(right) < 2:
+    # NWC receiving worksheets have four distinct right-side column
+    # separators (SKU/BIN/Bottles/Notes). Carrier BOLs can contain two
+    # long vertical rules and previously produced plausible but false rows.
+    # Fail closed instead of turning carrier locations into BINs.
+    # This is a template safeguard, not a general page-type classifier.
+    if len(right) < 4:
         raise ValueError(
-            f"Could not identify SKU/BIN table lines; found {len(right)} right-side lines."
+            "Page does not match the NWC receiving worksheet layout: "
+            f"expected at least 4 right-side table separators, found {len(right)}. "
+            "For mixed PDF packets, use --pages to choose worksheet pages."
         )
 
     return right

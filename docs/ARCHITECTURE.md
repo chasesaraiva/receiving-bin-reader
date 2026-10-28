@@ -16,6 +16,7 @@ PDF -> render each page -> deterministic row geometry
 - Write page-specific crop artifacts, combined manifests, review CSV, and elapsed runtime.
 - Reuse one OCR reader per batch to avoid repeated model initialization.
 - Fail the batch if any page cannot be geometrically processed.
+- Fail closed for non-NWC pages with fewer than four right-side table separators. This check is not a general classifier; use explicit `--pages` for mixed packets.
 - Require exact approved-list membership and independent model agreement.
 - Optional `--extended-variants` tests +/-3° rotation variants; the original consensus stays default until validated on larger fixture sets.
 - **No** inventory writes, fuzzy BIN correction, SKU alias matching, or auto approval.

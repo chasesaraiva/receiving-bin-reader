@@ -66,3 +66,30 @@ def test_padding_does_not_change_core_ownership():
         assert row.bin_padded.y2 >= row.core.y2
         assert row.core_top_in_bin_crop >= 0
         assert row.core_bottom_in_bin_crop <= row.bin_padded.height
+
+
+def test_carrier_style_two_rule_layout_fails_closed():
+    """A non-NWC carrier page with only two right-side rules must not make false rows."""
+    import pytest
+
+    width, height = 1400, 1000
+    array = np.full((height, width, 3), 255, dtype=np.uint8)
+    cv2.line(array, (80, 170), (1300, 170), (0, 0, 0), 3)
+    # Carrier-like layout: two surviving vertical rules and printed products.
+    for x in (1000, 1250):
+        cv2.line(array, (x, 90), (x, 750), (0, 0, 0), 2)
+    for index in range(10):
+        y = 220 + index * 45
+        cv2.putText(
+            array,
+            f"Carrier item {index + 1}",
+            (350, y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.65,
+            (0, 0, 0),
+            2,
+            cv2.LINE_AA,
+        )
+    image = Image.fromarray(cv2.cvtColor(array, cv2.COLOR_BGR2RGB))
+    with pytest.raises(ValueError, match="NWC receiving worksheet"):
+        detect_page_geometry(image)
