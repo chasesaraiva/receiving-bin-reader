@@ -3,13 +3,20 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps
 
+from .consensus import RecognitionPass
 from .models import Box, OcrToken
 
 
 DEFAULT_DETECTION_MODEL = "PP-OCRv5_mobile_det"
 DEFAULT_RECOGNITION_MODEL = "en_PP-OCRv5_mobile_rec"
+
+CONSENSUS_MODELS = (
+    "en_PP-OCRv5_mobile_rec",
+    "PP-OCRv5_server_rec",
+)
+CONSENSUS_VARIANTS = ("core", "3x_border")
 
 
 def _walk_for_ocr_dict(value: Any) -> dict[str, Any] | None:
@@ -50,8 +57,101 @@ def _box_from_any(raw: Any) -> Box:
     return Box(0, 0, 0, 0)
 
 
+def _extract_recognition_result(result: Any) -> tuple[str, float]:
+    payload = getattr(result, "json", result)
+    if callable(payload):
+        payload = payload()
+
+    if isinstance(payload, dict):
+        data = payload.get("res", payload)
+        return str(data.get("rec_text", "")), float(data.get("rec_score", 0.0))
+
+    return "", 0.0
+
+
+def _recognition_variant(image: Image.Image, variant: str) -> Image.Image:
+    gray = image.convert("L")
+
+    if variant == "core":
+        return gray.convert("RGB")
+
+    if variant == "3x_border":
+        scaled = gray.resize(
+            (gray.width * 3, gray.height * 3),
+            Image.Resampling.LANCZOS,
+        )
+        return ImageOps.expand(
+            scaled,
+            border=(24, 18, 24, 18),
+            fill=255,
+        ).convert("RGB")
+
+    raise ValueError(f"Unknown recognition variant: {variant}")
+
+
+class PaddleConsensusReader:
+    """
+    Recognition-only reader for an already isolated handwritten BIN crop.
+
+    Two independent PaddleOCR recognition models read two fixed image variants.
+    Row ownership has already been decided by deterministic geometry.
+    """
+
+    def __init__(
+        self,
+        model_names: tuple[str, ...] = CONSENSUS_MODELS,
+        variants: tuple[str, ...] = CONSENSUS_VARIANTS,
+    ) -> None:
+        try:
+            from paddleocr import TextRecognition
+        except ImportError as exc:
+            raise RuntimeError(
+                "PaddleOCR is not installed. Install the optional OCR dependencies."
+            ) from exc
+
+        self.model_names = model_names
+        self.variants = variants
+        self._models = {
+            name: TextRecognition(model_name=name, device="cpu")
+            for name in model_names
+        }
+
+    def read_passes(self, image: Image.Image) -> list[RecognitionPass]:
+        prepared = {
+            variant: np.asarray(_recognition_variant(image, variant))
+            for variant in self.variants
+        }
+
+        passes: list[RecognitionPass] = []
+
+        for model_name, model in self._models.items():
+            outputs = list(
+                model.predict(
+                    input=[prepared[variant] for variant in self.variants],
+                    batch_size=len(self.variants),
+                )
+            )
+
+            for variant, output in zip(self.variants, outputs):
+                text, score = _extract_recognition_result(output)
+                passes.append(
+                    RecognitionPass(
+                        model=model_name,
+                        variant=variant,
+                        text=text,
+                        score=score,
+                    )
+                )
+
+        return passes
+
+
 class PaddleBinReader:
-    """Handwriting-capable PaddleOCR adapter for isolated BIN crops."""
+    """
+    Legacy detector + recognizer adapter retained for diagnostics/smoke tests.
+
+    Production consensus reading should use PaddleConsensusReader.
+    """
 
     def __init__(
         self,
