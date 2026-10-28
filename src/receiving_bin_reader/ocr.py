@@ -17,6 +17,7 @@ CONSENSUS_MODELS = (
     "PP-OCRv5_server_rec",
 )
 CONSENSUS_VARIANTS = ("core", "3x_border")
+EXTENDED_VARIANTS = CONSENSUS_VARIANTS + ("rotate_cw3", "rotate_ccw3")
 
 
 def _walk_for_ocr_dict(value: Any) -> dict[str, Any] | None:
@@ -84,6 +85,24 @@ def _recognition_variant(image: Image.Image, variant: str) -> Image.Image:
             scaled,
             border=(24, 18, 24, 18),
             fill=255,
+        ).convert("RGB")
+
+    if variant in ("rotate_cw3", "rotate_ccw3"):
+        # Research-only option: ±3° on the original grayscale crop, then
+        # the identical 3x upscaling and border used in private benchmarks.
+        degrees = -3 if variant == "rotate_cw3" else 3
+        rotated = gray.rotate(
+            degrees,
+            resample=Image.Resampling.BICUBIC,
+            expand=True,
+            fillcolor=255,
+        )
+        scaled = rotated.resize(
+            (rotated.width * 3, rotated.height * 3),
+            Image.Resampling.LANCZOS,
+        )
+        return ImageOps.expand(
+            scaled, border=(24, 18, 24, 18), fill=255
         ).convert("RGB")
 
     raise ValueError(f"Unknown recognition variant: {variant}")

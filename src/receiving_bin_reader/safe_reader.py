@@ -8,7 +8,7 @@ from PIL import Image
 
 from .consensus import decide_consensus
 from .models import RowRead
-from .ocr import PaddleConsensusReader
+from .ocr import PaddleConsensusReader, EXTENDED_VARIANTS
 from .pipeline import crop_pdf
 from .validation import load_approved_bins, split_bin_candidates
 
@@ -105,6 +105,7 @@ def read_pdf_consensus(
     out_dir: str | Path,
     page_number: int = 1,
     dpi: int = 180,
+    extended_variants: bool = False,
 ) -> list[RowRead]:
     """
     Production-safe single-page reader. Retains the historical CLI format.
@@ -114,7 +115,10 @@ def read_pdf_consensus(
     crop_pdf(pdf_path, out_dir, page_number=page_number, dpi=dpi)
 
     approved = load_approved_bins(approved_bins_path)
-    reader = PaddleConsensusReader()
+    reader = (
+        PaddleConsensusReader(variants=EXTENDED_VARIANTS)
+        if extended_variants else PaddleConsensusReader()
+    )
     reads, output_rows = _read_manifest(out_dir, approved, reader)
 
     with (out_dir / "review.csv").open(

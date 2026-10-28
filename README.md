@@ -70,6 +70,19 @@ receiving-bin-reader read "mixed-packet.pdf" --pages 1,3-4 \
 
 Multipage processing **loads the two OCR models once** and reuses them across the packet. The combined `review.csv` has page and row identifiers, exact accepted BINs (if any), OCR passes, rejected candidates, status, review reason, and crop paths. Individual page review CSVs remain available inside each page folder.
 
+### Experimental handwriting improvement
+
+A private 17-fixture benchmark compared eight image treatments. Adding two +/-3 degree rotated variants (using the original two independent OCR models) increased correctly accepted BIN entries from 10 to 11 with zero wrong acceptances in that small test. Other tested treatments did not increase coverage.
+
+The original two-variant consensus remains the default. To evaluate the extra rotation safely:
+
+```bash
+receiving-bin-reader read "packet.pdf" --pages 1,3-4 \
+  --approved-bins approved_bins.txt --extended-variants --out output/
+```
+
+This costs additional CPU inference and **is experimental**, not validated for unattended inventory updates.
+
 **A `VALID` decision is not permission to update Inventory.** Review and human sign-off remain separate. Unapproved readings are never auto-corrected; ambiguity is never automatically resolved through fuzzy matching.
 
 ## Status and limitations

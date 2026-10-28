@@ -35,6 +35,10 @@ def _parser() -> argparse.ArgumentParser:
     rg.add_argument("--all-pages", action="store_true")
     rg.add_argument("--pages", help="Receiving worksheet pages only, e.g. 1,3-5.")
     read.add_argument("--dpi", type=int, default=180)
+    read.add_argument(
+        "--extended-variants", action="store_true",
+        help="Experimental +/-3 degree OCR variant search; review results carefully.",
+    )
     return parser
 
 
@@ -60,7 +64,8 @@ def main() -> None:
     if args.all_pages or selection is not None:
         result = read_pdf_batch_consensus(
             args.pdf, args.approved_bins, args.out,
-            dpi=args.dpi, pages=selection
+            dpi=args.dpi, pages=selection,
+            extended_variants=args.extended_variants,
         )
         print(json.dumps(result, indent=2))
         return
@@ -68,6 +73,7 @@ def main() -> None:
     reads = read_pdf_consensus(
         args.pdf, args.approved_bins, args.out,
         page_number=args.page, dpi=args.dpi,
+        extended_variants=args.extended_variants,
     )
     print(json.dumps({
         "row_count": len(reads),

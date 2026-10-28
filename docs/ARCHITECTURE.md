@@ -17,6 +17,7 @@ PDF -> render each page -> deterministic row geometry
 - Reuse one OCR reader per batch to avoid repeated model initialization.
 - Fail the batch if any page cannot be geometrically processed.
 - Require exact approved-list membership and independent model agreement.
+- Optional `--extended-variants` tests +/-3° rotation variants; the original consensus stays default until validated on larger fixture sets.
 - **No** inventory writes, fuzzy BIN correction, SKU alias matching, or auto approval.
 
 Synthetic two-page tests exercise page/row isolation, review aggregation, one-time reader initialization, and fail-closed page handling. Real scanned documents and handwritten fixtures still require validation.
