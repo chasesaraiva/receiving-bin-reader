@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "receiving-bin-reader"
+version = "0.1.0"
+description = "Deterministic row cropping and open-source BIN OCR for receiving worksheets"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{name = "Open-source contributors"}]
+dependencies = [
+  "numpy>=1.26,<3",
+  "opencv-python-headless>=4.9,<5",
+  "Pillow>=10,<13",
+  "PyMuPDF>=1.24,<2",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<10"]
+ocr = ["paddleocr==3.7.0"]
+
+[project.scripts]
+receiving-bin-reader = "receiving_bin_reader.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
