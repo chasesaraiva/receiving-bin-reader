@@ -35,9 +35,14 @@ def _parser() -> argparse.ArgumentParser:
     rg.add_argument("--all-pages", action="store_true")
     rg.add_argument("--pages", help="Receiving worksheet pages only, e.g. 1,3-5.")
     read.add_argument("--dpi", type=int, default=180)
-    read.add_argument(
+    variant_group = read.add_mutually_exclusive_group()
+    variant_group.add_argument(
         "--extended-variants", action="store_true",
-        help="Experimental +/-3 degree OCR variant search; review results carefully.",
+        help="Experimental +/-3 degree OCR variant search.",
+    )
+    variant_group.add_argument(
+        "--blue-ink-variants", action="store_true",
+        help="Experimental blue ballpoint ink isolation (keeps original OCR passes).",
     )
     return parser
 
@@ -66,6 +71,7 @@ def main() -> None:
             args.pdf, args.approved_bins, args.out,
             dpi=args.dpi, pages=selection,
             extended_variants=args.extended_variants,
+            blue_ink_variants=args.blue_ink_variants,
         )
         print(json.dumps(result, indent=2))
         return

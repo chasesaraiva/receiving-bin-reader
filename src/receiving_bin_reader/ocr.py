@@ -5,6 +5,7 @@ from typing import Any
 import numpy as np
 from PIL import Image, ImageOps
 
+from .blue_ink import blue_recognition_variant
 from .consensus import RecognitionPass
 from .models import Box, OcrToken
 
@@ -18,6 +19,7 @@ CONSENSUS_MODELS = (
 )
 CONSENSUS_VARIANTS = ("core", "3x_border")
 EXTENDED_VARIANTS = CONSENSUS_VARIANTS + ("rotate_cw3", "rotate_ccw3")
+BLUE_VARIANTS = CONSENSUS_VARIANTS + ("blue_core", "blue_3x_border")
 
 
 def _walk_for_ocr_dict(value: Any) -> dict[str, Any] | None:
@@ -70,7 +72,10 @@ def _extract_recognition_result(result: Any) -> tuple[str, float]:
     return "", 0.0
 
 
-def _recognition_variant(image: Image.Image, variant: str) -> Image.Image:
+def _recognition_variant(image: Image.Image, variant: str) -> Image.Image | None:
+    if variant.startswith("blue_"):
+        return blue_recognition_variant(image, variant)
+
     gray = image.convert("L")
 
     if variant == "core":
@@ -136,22 +141,32 @@ class PaddleConsensusReader:
         }
 
     def read_passes(self, image: Image.Image) -> list[RecognitionPass]:
-        prepared = {
-            variant: np.asarray(_recognition_variant(image, variant))
+        rendered = {
+            variant: _recognition_variant(image, variant)
             for variant in self.variants
         }
+        # No blue ink => NO blue OCR passes. Do not let a model hallucinate a
+        # vote on a blank color-extracted image.
+        prepared = {
+            variant: np.asarray(result)
+            for variant, result in rendered.items()
+            if result is not None
+        }
+        active_variants = [variant for variant in self.variants if variant in prepared]
 
         passes: list[RecognitionPass] = []
 
         for model_name, model in self._models.items():
+            if not active_variants:
+                continue
             outputs = list(
                 model.predict(
-                    input=[prepared[variant] for variant in self.variants],
-                    batch_size=len(self.variants),
+                    input=[prepared[variant] for variant in active_variants],
+                    batch_size=len(active_variants),
                 )
             )
 
-            for variant, output in zip(self.variants, outputs):
+            for variant, output in zip(active_variants, outputs):
                 text, score = _extract_recognition_result(output)
                 passes.append(
                     RecognitionPass(

@@ -9,7 +9,7 @@ import fitz
 
 from .pipeline import crop_pdf
 from .safe_reader import _read_manifest, _review_header
-from .ocr import PaddleConsensusReader, EXTENDED_VARIANTS
+from .ocr import PaddleConsensusReader, EXTENDED_VARIANTS, BLUE_VARIANTS
 from .validation import load_approved_bins
 
 
@@ -131,13 +131,18 @@ def read_pdf_batch_consensus(
     dpi: int = 180,
     pages: list[int] | None = None,
     extended_variants: bool = False,
+    blue_ink_variants: bool = False,
 ) -> dict:
     """Load the OCR models once; keep page/row ownership and approval conservative."""
     out_dir = Path(out_dir)
     start = perf_counter()
     crop_result = crop_pdf_batch(pdf_path, out_dir, dpi=dpi, pages=pages)
     approved = load_approved_bins(approved_bins_path)
+    if blue_ink_variants and extended_variants:
+        raise ValueError("Choose only one experimental variant mode.")
     reader = (
+        PaddleConsensusReader(variants=BLUE_VARIANTS)
+        if blue_ink_variants else
         PaddleConsensusReader(variants=EXTENDED_VARIANTS)
         if extended_variants else PaddleConsensusReader()
     )

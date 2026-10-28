@@ -8,7 +8,7 @@ from PIL import Image
 
 from .consensus import decide_consensus
 from .models import RowRead
-from .ocr import PaddleConsensusReader, EXTENDED_VARIANTS
+from .ocr import PaddleConsensusReader, EXTENDED_VARIANTS, BLUE_VARIANTS
 from .ownership import detect_row_ownership_conflicts
 from .pipeline import crop_pdf
 from .validation import load_approved_bins, split_bin_candidates
@@ -28,6 +28,19 @@ def _review_header() -> list[str]:
         "row_crop",
         "bin_crop",
     ]
+
+
+def _blue_only_accept(decision, passes) -> bool:
+    """Never accept a blue-derived value unsupported by the original image."""
+    if decision.status != "ACCEPT":
+        return False
+    if not any(p.variant.startswith("blue_") for p in passes):
+        return False
+    return not any(
+        not p.variant.startswith("blue_")
+        and tuple(split_bin_candidates(p.text)) == decision.bins
+        for p in passes
+    )
 
 
 def _ownership_crop(image: Image.Image, manifest: dict[str, str]) -> Image.Image:
@@ -72,7 +85,9 @@ def _read_manifest(
                 if value not in rejected:
                     rejected.append(value)
 
-        warnings = conflicts.get(row_number, [])
+        warnings = list(conflicts.get(row_number, []))
+        if _blue_only_accept(decision, passes):
+            warnings.append("BLUE_OCR_REQUIRES_ORIGINAL_IMAGE_CORROBORATION")
         # Never approve a BIN with ambiguous physical ownership, even if
         # the OCR models unanimously agree on the text. Show OCR as hints.
         accepted = [] if warnings else list(decision.bins)
@@ -120,6 +135,7 @@ def read_pdf_consensus(
     page_number: int = 1,
     dpi: int = 180,
     extended_variants: bool = False,
+    blue_ink_variants: bool = False,
 ) -> list[RowRead]:
     """
     Production-safe single-page reader. Retains the historical CLI format.
@@ -129,7 +145,11 @@ def read_pdf_consensus(
     crop_pdf(pdf_path, out_dir, page_number=page_number, dpi=dpi)
 
     approved = load_approved_bins(approved_bins_path)
+    if blue_ink_variants and extended_variants:
+        raise ValueError("Choose only one experimental variant mode.")
     reader = (
+        PaddleConsensusReader(variants=BLUE_VARIANTS)
+        if blue_ink_variants else
         PaddleConsensusReader(variants=EXTENDED_VARIANTS)
         if extended_variants else PaddleConsensusReader()
     )

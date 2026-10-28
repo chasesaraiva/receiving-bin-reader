@@ -104,3 +104,22 @@ Stage 1 covers deterministic crop geometry, conservative OCR, review files, and 
 The cropper assumes the receiving-table layout matches tested geometry. Validate real full PDFs, row counts, and end-to-end CPU runtime before connecting Google Drive/Sheets. A Google Sheets interface, SKU matching, inventory consolidation, vintage changes, and approvals are not implemented here.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+
+### Experimental blue-ink isolation
+
+For worksheets written in blue ballpoint, the reader can generate two extra
+black-on-white recognition views containing only blue-dominant pixels.
+Black printed text and table lines are removed from **these additional views**
+but the original grayscale crops are always retained.
+
+```bash
+receiving-bin-reader read packet.pdf --pages 1 --blue-ink-variants \
+  --approved-bins approved_bins.txt --out output/
+```
+
+The mode is **off by default** and must be evaluated against manually verified
+receiving worksheets before use. A blue-only OCR candidate cannot become
+`VALID` without support from an original-image OCR pass. Physical ink
+crossing between rows overrides even unanimous recognition and forces
+`REVIEW`. Black-written/printed BINs still use the ordinary OCR path.
