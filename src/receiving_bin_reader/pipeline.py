@@ -5,16 +5,15 @@ import json
 from pathlib import Path
 from statistics import mean
 
+from PIL import Image
+
+from .consensus import decide_consensus
 from .crops import save_contact_sheet, save_crops, save_overlay
 from .geometry import detect_page_geometry
 from .models import RowRead
-from .ocr import PaddleBinReader
+from .ocr import PaddleConsensusReader
 from .render import render_page
-from .validation import (
-    load_approved_bins,
-    split_bin_candidates,
-    validate_candidates,
-)
+from .validation import load_approved_bins, normalize_bin
 
 
 def crop_pdf(
@@ -82,6 +81,14 @@ def crop_pdf(
     return summary
 
 
+def _canonical_pass_text(text: str) -> str:
+    return ",".join(
+        part
+        for raw in str(text or "").split(",")
+        if (part := normalize_bin(raw))
+    )
+
+
 def read_pdf(
     pdf_path: str | Path,
     approved_bins_path: str | Path,
@@ -90,65 +97,87 @@ def read_pdf(
     dpi: int = 180,
     score_review_threshold: float = 0.70,
 ) -> list[RowRead]:
+    """
+    Read handwritten BINs using conservative independent-model consensus.
+
+    The score_review_threshold argument is retained for CLI compatibility, but
+    acceptance is determined by exact Approved BIN membership plus agreement
+    across two independent PaddleOCR recognition model families.
+    """
     out_dir = Path(out_dir)
     crop_pdf(pdf_path, out_dir, page_number=page_number, dpi=dpi)
 
     approved = load_approved_bins(approved_bins_path)
-    reader = PaddleBinReader(score_threshold=0.0)
+    reader = PaddleConsensusReader()
 
     manifest_rows = list(
         csv.DictReader((out_dir / "manifest.csv").open(encoding="utf-8"))
     )
 
     reads: list[RowRead] = []
+    audit_rows: list[list[str]] = []
 
     for manifest in manifest_rows:
         row_number = int(manifest["row"])
         bin_path = out_dir / manifest["bin_crop"]
         row_path = out_dir / manifest["row_crop"]
 
-        from PIL import Image
-
         image = Image.open(bin_path).convert("RGB")
 
         core_top = int(manifest["core_top"]) - int(manifest["bin_padded_top"])
         core_bottom = int(manifest["core_bottom"]) - int(manifest["bin_padded_top"])
 
-        tokens = reader.read(image)
+        # Same crop policy that produced the benchmark result: preserve a small
+        # handwriting margin, while deterministic row geometry still owns the row.
+        top = max(0, core_top - 4)
+        bottom = min(image.height, core_bottom + 4)
+        recognition_crop = image.crop((0, top, image.width, bottom))
 
-        owned = [
-            token
-            for token in tokens
-            if core_top <= token.box.center_y <= core_bottom
+        passes = reader.read_passes(recognition_crop)
+        decision = decide_consensus(passes, approved)
+
+        canonical_candidates = list(
+            dict.fromkeys(
+                candidate
+                for result in passes
+                if (candidate := _canonical_pass_text(result.text))
+            )
+        )
+
+        rejected_candidates = [
+            candidate
+            for candidate in canonical_candidates
+            if not all(part in approved for part in candidate.split(","))
         ]
 
-        raw_candidates: list[str] = []
-        scores: list[float] = []
-
-        for token in sorted(owned, key=lambda item: (item.box.y1, item.box.x1)):
-            raw_candidates.extend(split_bin_candidates(token.text))
-            scores.append(token.score)
-
-        raw_candidates = list(dict.fromkeys(raw_candidates))
-
-        accepted, rejected = validate_candidates(raw_candidates, approved)
+        scores = [result.score for result in passes if result.text]
         mean_score = mean(scores) if scores else 0.0
-
-        status = "VALID"
-        if not accepted or rejected or mean_score < score_review_threshold:
-            status = "REVIEW"
 
         reads.append(
             RowRead(
                 row_number=row_number,
-                accepted_bins=accepted,
-                raw_candidates=raw_candidates,
-                rejected_candidates=rejected,
+                accepted_bins=list(decision.bins),
+                raw_candidates=canonical_candidates,
+                rejected_candidates=rejected_candidates,
                 mean_score=mean_score,
-                status=status,
+                status="VALID" if decision.status == "ACCEPT" else "REVIEW",
                 row_crop=row_path,
                 bin_crop=bin_path,
             )
+        )
+
+        audit_rows.append(
+            [
+                str(row_number),
+                decision.status,
+                decision.candidate,
+                ", ".join(decision.supporting_models),
+                decision.reason,
+                " | ".join(
+                    f"{result.model}/{result.variant}:{result.text}:{result.score:.4f}"
+                    for result in passes
+                ),
+            ]
         )
 
     with (out_dir / "review.csv").open("w", newline="", encoding="utf-8") as handle:
@@ -179,5 +208,19 @@ def read_pdf(
                     read.bin_crop.relative_to(out_dir) if read.bin_crop else "",
                 ]
             )
+
+    with (out_dir / "ocr_audit.csv").open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(
+            [
+                "row",
+                "consensus_status",
+                "candidate",
+                "supporting_models",
+                "reason",
+                "all_passes",
+            ]
+        )
+        writer.writerows(audit_rows)
 
     return reads
