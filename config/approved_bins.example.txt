@@ -1,0 +1,8 @@
+# One exact BIN per line.
+# Comments and blank lines are ignored.
+1A1
+1A2
+1A3
+BC
+R1A
+R1B
