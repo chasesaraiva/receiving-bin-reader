@@ -80,6 +80,7 @@ def main() -> None:
         args.pdf, args.approved_bins, args.out,
         page_number=args.page, dpi=args.dpi,
         extended_variants=args.extended_variants,
+        blue_ink_variants=args.blue_ink_variants,
     )
     print(json.dumps({
         "row_count": len(reads),
