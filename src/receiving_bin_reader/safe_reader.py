@@ -9,6 +9,7 @@ from PIL import Image
 from .consensus import decide_consensus
 from .models import RowRead
 from .ocr import PaddleConsensusReader, EXTENDED_VARIANTS
+from .ownership import detect_row_ownership_conflicts
 from .pipeline import crop_pdf
 from .validation import load_approved_bins, split_bin_candidates
 
@@ -45,6 +46,7 @@ def _read_manifest(
     with (out_dir / "manifest.csv").open(encoding="utf-8", newline="") as handle:
         manifest_rows = list(csv.DictReader(handle))
 
+    conflicts = detect_row_ownership_conflicts(out_dir, manifest_rows)
     reads: list[RowRead] = []
     output_rows: list[list[str]] = []
 
@@ -69,9 +71,19 @@ def _read_manifest(
                 if value not in rejected:
                     rejected.append(value)
 
-        accepted = list(decision.bins)
+        warnings = conflicts.get(row_number, [])
+        # Never approve a BIN with ambiguous physical ownership, even if
+        # the OCR models unanimously agree on the text. Show OCR as hints.
+        accepted = [] if warnings else list(decision.bins)
         avg_score = mean(scores) if scores else 0.0
-        status = "VALID" if decision.status == "ACCEPT" else "REVIEW"
+        status = (
+            "VALID" if decision.status == "ACCEPT" and not warnings
+            else "REVIEW"
+        )
+        reason = (
+            "; ".join(warnings) + "; " + decision.reason
+            if warnings else decision.reason
+        )
 
         reads.append(RowRead(
             row_number=row_number,
@@ -91,7 +103,7 @@ def _read_manifest(
             ", ".join(rejected),
             f"{avg_score:.4f}",
             status,
-            decision.reason,
+            reason,
             ", ".join(decision.supporting_models),
             str(row_path.relative_to(out_dir)),
             str(bin_path.relative_to(out_dir)),

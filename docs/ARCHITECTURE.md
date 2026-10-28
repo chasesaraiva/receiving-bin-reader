@@ -13,6 +13,7 @@ PDF -> render each page -> deterministic row geometry
 - Crop individual pages or entire receiving-only PDFs with `--all-pages`; explicitly select receiving-worksheet pages within mixed BOL packets using `--pages 1,3-5`.
 - Report source page count, selected PDF pages and skipped pages, rather than guessing whether carrier-only pages contain BINs.
 - Keep row ownership independent from OCR and never transfer BIN values between rows.
+- Inspect ink immediately above and below adjacent row boundaries; if strokes seem to cross, mark BOTH products REVIEW regardless of OCR agreement. This avoids accidental adjacent-row assignments without guessing new row ownership.
 - Write page-specific crop artifacts, combined manifests, review CSV, and elapsed runtime.
 - Reuse one OCR reader per batch to avoid repeated model initialization.
 - Fail the batch if any page cannot be geometrically processed.
